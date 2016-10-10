@@ -36,7 +36,7 @@ def TranslateName(name, translationList=translationList):
     return name
 
 excludeBoxList = [ 'E[LP][5-9]...' ]
-def CleanBoxes(root, exList=excludeBoxList, verbose=False):
+def CleanBoxes(root, exList=excludeBoxList, vlvl=0):
     """Creates the iterable of boxes in the topology while
     excluding all boxes on the exList.
 
@@ -44,19 +44,18 @@ def CleanBoxes(root, exList=excludeBoxList, verbose=False):
     root = the root of the xti xml tree (xml.etree.ElementTree.ElementTree object) 
     """
     boxes = root.findall('.//Box')
-    print 'type',type(boxes),'stuff',boxes
+    if vlvl > 1: print 'type',type(boxes),'stuff',boxes
     for box in reversed(boxes):
         name = box.find('Name')
-        print type(box)
-        if verbose: print 'Checking box:',name.text
+        if vlvl>1: print 'Checking box:',name.text
         for exclusion in exList:
             if re.search(exclusion, name.text):
-                if verbose: print 'Removing box:',name.text
+                if vlvl>1: print 'Removing box:',name.text
                 box.getparent().remove(box)
                 break
     return root
 
-def PrintTopology(root, level=2):
+def PrintTopology(root, level=0):
     '''Prints the topo of the PDOs in the xti'''
     boxes = root.findall('.//Box')
     if len(boxes):
@@ -109,29 +108,37 @@ def SimplifyPdos(root, omit_list=omit_list, vlvl=0):
                     
     return root
 
-def MakeLinkPragma(element, vlv=0):
+def MakeLinkPragma(element, vlvl=0):
     '''Makes the link pragma instruction'''
     linkList = [element.get('Name')]
-    for ancestor in reversed(element.iterancestors('Pdo','Entry','Box','Device')):
-        if ancestor.tag == 'Entry':
+    for ancestor in element.iterancestors('Pdo','Entry','Box','Device'):
+        if ancestor.tag == 'Entry' or ancestor.tag =='Pdo':
             linkList.append(ancestor.get('Name'))
         elif ancestor.tag =='Device' or ancestor.tag =='Box':
-            linkList.append(ancestor.find('Name').text
-    for link in linkList:
-            
+            linkList.append(ancestor.find('Name').text)
+        else:
+            print 'Didn\'t find any ancestors'
+        if vlvl > 1: print 'Adding',linkList[-1]
+    linkAssembly = 'TIID'
+    for link in reversed(linkList):
+           linkAssembly = linkAssembly + '^' + link
+    pragma = '{{ attribute \'TcLinkTo\':=\'{link}\'}}'.format(link=linkAssembly)
     return pragma
 
-def IsIQ(name, simulator=false):
+def IsIQ(name, simulator=False):
     ''' Determines if you should use Q or I
     simulator = flips the I and Q for use in the simulator code'''
     out = ''
     if name == None:
         return '?'
     elif re.search('Input|Ai|Value', name):
-        if simulator: out = 'Q' else: 'I'
+        if simulator: 
+            out = 'Q' 
+        else: out = 'I'
         return out
     elif re.search('Output|Ao|output', name):
-        if simulator: out = 'I' else: 'Q'
+        if simulator: out = 'I'
+        else: out = 'Q'
         return out
     else:
         return '?'
@@ -143,24 +150,31 @@ def IQList(root, vlvl=0):
     iqList = []
     for box in boxes:
         boxName = box.find('Name').text
-        if re.search('EK1.+', boxName): continue
+        if vlvl > 2: print 'Working on box',boxName
+        if re.search('EK1.+', boxName): 
+            if vlvl > 1: print 'Found EK1*, skipping'
+            continue
         boxName = formatBoxName.sub(r'\1_\2', boxName).replace(' ','')
         iqList.append('//'+boxName)
         pdos = box.findall('.//Pdo')
         for pdo in pdos:
             pdoName = pdo.get('Name')
+            if vlvl > 2: print 'Working on pdo',pdoName
             pdoName = formatPDOName.sub(r'Ch\1', pdoName)
             entries = pdo.findall('Entry')
             for entry in entries:
                 entryName = entry.get('Name')
-                entryType = entry.find('Type').text
+                if vlvl > 2: print 'Working on entry',entryName
+                entryType= entry.find('Type').text
                 #Each iq line printed here
+                pragmaLine = MakeLinkPragma(entry)
                 entryLine = '{iq}_{boxname}_{pdoname} AT %{iq}* : {entrytype};'.format(boxname = boxName,
                                                                                          pdoname = pdoName,
                                                                                          entryname = TranslateName(entryName),
                                                                                          iq = IsIQ(entryName),
                                                                                          entrytype = TranslateName(entryType))
                 if vlvl > 1: print 'Adding',entryLine
+                iqList.append(pragmaLine)
                 iqList.append(entryLine)
                 
     return iqList
