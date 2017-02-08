@@ -35,7 +35,8 @@ def TranslateName(name, translationList=translationList):
     name.replace(' ', '_')
     return name
 
-excludeBoxList = [ 'E[LP][5-9]...' ]
+#A list of reg expressions to search for stuff to delete
+excludeBoxList = [ 'E[LP][5-9]\d3.' ]
 def CleanBoxes(root, exList=excludeBoxList, vlvl=0):
     """Creates the iterable of boxes in the topology while
     excluding all boxes on the exList.
